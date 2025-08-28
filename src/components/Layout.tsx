@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { z } from 'zod';
 import { useAppStore } from '../store/useAppStore';
 import { sendMessageToAI } from '../services/geminiService';
+import { exportResumeDocx, exportResumePdf } from '../services/resumeExport';
 
 // ---- Add these type declarations ----
 type ResumeOperation = 'reset' | 'redesign' | 'clear' | 'remove' | 'replace' | 'update' | 'add';
@@ -19,6 +20,14 @@ interface ResumeExperience {
   company: string;
   title: string;
   duration: string;
+  description: string[];
+}
+
+interface Experience {
+  id?: string;
+  company: string;
+  title: string;
+  duration?: string;
   description: string[];
 }
 
@@ -60,6 +69,7 @@ const normalizeExperiences = (items: ExperienceInput[] = []) =>
     }));
 
 // Use the same Zod schema as WelcomeForm
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const welcomeFormSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
@@ -100,6 +110,7 @@ const Layout: React.FC<LayoutProps> = ({ userBasicInfo }) => {
   
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
   const initialMessageSent = useRef(false);
 
   // Add initial AI greeting when component mounts
@@ -119,10 +130,32 @@ To get started, tell me about your current job - what company do you work for an
     }
   }, [userBasicInfo, chatMessages.length, addChatMessage]);
 
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (showExportDropdown && !target.closest('.relative')) {
+        setShowExportDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportDropdown]);
+
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+    console.log('handleSendMessage called');
+    console.log('inputMessage:', inputMessage);
+    console.log('isLoading:', isLoading);
+
+    if (!inputMessage.trim() || isLoading) {
+      console.log('Early return - message empty or loading');
+      return;
+    }
 
     const userMessage = inputMessage.trim();
+    console.log('Processing message:', userMessage);
+
     setInputMessage('');
     setIsLoading(true);
 
@@ -173,7 +206,7 @@ To get started, tell me about your current job - what company do you work for an
                   summary: updates.completeResume.summary || ''
                 };
                 // cast to any to satisfy store's stricter Resume type
-                replaceEntireResume(normalized as any);
+                replaceEntireResume(normalized);
                 addChatMessage('🎨 Complete resume redesign applied!', 'ai');
               }
               break;
@@ -216,7 +249,7 @@ To get started, tell me about your current job - what company do you work for an
             case 'replace':
               if (updates.experiences && Array.isArray(updates.experiences)) {
                 const normalized = normalizeExperiences(updates.experiences);
-                replaceAllExperiences(normalized as any);
+                replaceAllExperiences(normalized);
                 addChatMessage('🔄 Replaced all experiences with new ones!', 'ai');
               }
               if (updates.skills && Array.isArray(updates.skills)) {
@@ -244,7 +277,7 @@ To get started, tell me about your current job - what company do you work for an
                     description: exp.description && exp.description.length
                       ? exp.description
                       : ['Key responsibility']
-                  } as any);
+                  });
                   addChatMessage(`✅ ${operation === 'update' ? 'Updated' : 'Added'} experience at ${exp.company}!`, 'ai');
                 } else {
                   console.log('Skipped adding experience with incomplete data:', exp);
@@ -280,6 +313,63 @@ To get started, tell me about your current job - what company do you work for an
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  // Export handler functions
+  const handleDownloadDocx = async () => {
+    try {
+      const docxPath = await exportResumeDocx(resume, 'resume.docx');
+      if (docxPath) {
+        // Create a temporary link to download the file
+        const link = document.createElement('a');
+        link.href = docxPath;
+        link.download = 'resume.docx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (error) {
+      console.error('Error downloading DOCX:', error);
+      alert('Error downloading DOCX file. Please try again.');
+    }
+    setShowExportDropdown(false);
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      const pdfPath = exportResumePdf(resume, 'resume.pdf');
+      if (pdfPath) {
+        // Create a temporary link to download the file
+        const link = document.createElement('a');
+        link.href = pdfPath;
+        link.download = 'resume.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('Error downloading PDF file. Please try again.');
+    }
+    setShowExportDropdown(false);
+  };
+
+  const handleSendEmail = async () => {
+    try {
+      // Email functionality requires a backend server to handle file attachments
+      // For now, we'll show a message explaining this limitation
+      alert('Email functionality with file attachments requires a backend server. Please use the download options above to get your resume files.');
+
+      // Future implementation would involve:
+      // 1. Creating a backend API endpoint
+      // 2. Using nodemailer on the server side
+      // 3. Sending files as attachments via the API
+
+    } catch (error) {
+      console.error('Error with email functionality:', error);
+      alert('Email functionality is not yet implemented. Please use the download options.');
+    }
+    setShowExportDropdown(false);
   };
 
   // Combine skills from user input and AI suggestions
@@ -395,7 +485,7 @@ To get started, tell me about your current job - what company do you work for an
                   <h2 className="text-lg font-semibold text-gray-900 mb-2">Experience</h2>
                   <div className="space-y-3">
                     {/* AI-generated experiences */}
-                    {resume.experiences.map((exp: any) => (
+                    {resume.experiences.map((exp: Experience) => (
                       <div key={exp.id || exp.company}>
                         <h3 className="font-medium text-gray-900">{exp.title}</h3>
                         <p className="text-sm text-gray-600">{exp.company} • {exp.duration}</p>
@@ -445,10 +535,51 @@ To get started, tell me about your current job - what company do you work for an
             </div>
             
             {/* Action Buttons */}
-            <div className="flex gap-2 mt-4">
-              <button className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                Export PDF
-              </button>
+            <div className="flex gap-2 mt-4 relative">
+              <div className="flex-1 relative">
+                <button
+                  onClick={() => setShowExportDropdown(!showExportDropdown)}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span>Export</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {/* Export Dropdown */}
+                {showExportDropdown && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                    <button
+                      onClick={handleDownloadDocx}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Download DOCX
+                    </button>
+                    <button
+                      onClick={handleDownloadPdf}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={handleSendEmail}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Email (Coming Soon)
+                    </button>
+                  </div>
+                )}
+              </div>
               <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                 Templates
               </button>

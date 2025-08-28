@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useAppStore } from '../store/useAppStore';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+console.log('API Key loaded:', apiKey ? 'Yes' : 'No');
 if (!apiKey) throw new Error('VITE_GEMINI_API_KEY is not set in environment variables');
 
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -333,8 +334,11 @@ export const sendMessageToAI = async (
   resumeData?: Resume,
   chatMessages?: any[]
 ) => {
+  console.log('sendMessageToAI called with:', { message, userContext, resumeData, chatMessages });
+
   try {
     const lang = detectLanguage(message);
+    console.log('Detected language:', lang);
     const systemPrompt = getSystemPrompt(lang, userContext, resumeData || {}, chatMessages);
 
     const fullPrompt = `${systemPrompt}

@@ -1,3 +1,1 @@
-import { expect } from 'vitest';
-
-global.expect = expect;
+// Vitest setup - expect is provided globally
